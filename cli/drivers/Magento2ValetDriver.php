@@ -2,6 +2,23 @@
 
 class Magento2ValetDriver extends ValetDriver
 {
+    /**
+     * Define consts
+     */
+    const MAGE_MODE_PRODUCTION = 'production';
+    const MAGE_MODE_DEVELOPER = 'developer';
+
+    /**
+     * Holds all env settings given in env.php for specific magento site
+     *
+     * @var array
+     */
+    public $env;
+
+    /**
+     * @param $devtools
+     * @param $url
+     */
     public function configure($devtools, $url)
     {
         info('Configuring Magento 2...');
@@ -32,10 +49,10 @@ class Magento2ValetDriver extends ValetDriver
 
         info('Setting elastic search hostname...');
         $devtools->cli->quietlyAsUser('n98-magerun2 config:store:set catalog/search/elasticsearch_server_hostname 127.0.0.1');
-        
+
         info('Enabling URL rewrites...');
         $devtools->cli->quietlyAsUser('n98-magerun2 config:store:set web/seo/use_rewrites 1');
-        
+
         info('Flushing cache...');
         $devtools->cli->quietlyAsUser('n98-magerun2 cache:flush');
 
@@ -56,16 +73,28 @@ class Magento2ValetDriver extends ValetDriver
             file_exists($sitePath . '/bin/magento');
     }
 
+    /**
+     * @param $sitePath
+     * @return bool
+     */
     public function envExists($sitePath)
     {
         return file_exists($sitePath.'/app/etc/env.php');
     }
 
+    /**
+     * @param $sitePath
+     * @return bool
+     */
     public function moduleConfigExists($sitePath)
     {
         return file_exists($sitePath.'/app/etc/config.php');
     }
 
+    /**
+     * @param $sitePath
+     * @return bool
+     */
     public function installed($sitePath)
     {
         return $this->envExists($sitePath) && $this->moduleConfigExists($sitePath);
@@ -84,8 +113,8 @@ class Magento2ValetDriver extends ValetDriver
         $this->loadServerEnvironmentVariables($sitePath, $siteName);
         $isMagentoStatic = false;
         $resource = $uri;
-        
-        if (strpos($uri, '/errors') === 0 && file_exists($sitePath.'/pub'.$uri)) {
+
+        if(strpos($uri, '/errors/') === 0 && file_exists($sitePath.'/pub'.$uri)) {
             return $sitePath.'/pub'.$uri;
         }
 
@@ -93,7 +122,17 @@ class Magento2ValetDriver extends ValetDriver
             return $sitePath.'/setup'.$uri;
         }
 
+        if(strpos($uri,'/pub/') === 0 ) {
+            $uri = substr($uri, 4);
+        }
+
         if (strpos($uri, '/static/') !== false) {
+            $isMagentoStatic = true;
+            $resource = preg_replace('#static(/version[0-9]+)?/#', '', $uri, 1);
+            $uri = '/static' . $resource;
+        }
+
+        if (preg_match('/^(.*\.(txt|xml|ico))$/', $uri, $result)) {
             $isMagentoStatic = true;
         }
 
@@ -101,22 +140,35 @@ class Magento2ValetDriver extends ValetDriver
             return false;
         }
 
-        if ($isMagentoStatic) {
-            $resource = preg_replace('#static(/version[0-9]+)?/#', '', $uri, 1);
-            $uri = '/static' . $resource;
-        }
+        $staticFilePath = $sitePath . '/pub' . $uri;
 
-        if (strpos($uri, '/js-translation.json') !== false) {
-            header('Cache-Control: no-store, must-revalidate');
-        }
-
-        if (file_exists($staticFilePath = $sitePath . '/pub' . $uri)) {
-            return $staticFilePath;
+        if (file_exists($staticFilePath)) {
+            if (strpos($uri, '/js-translation.json') === false) {
+                return $staticFilePath;
+            } else {
+                // check if production mode is set and load js-translation.json files as static too
+                if ($this->isMode($sitePath, self::MAGE_MODE_PRODUCTION)) {
+                    return $staticFilePath;
+                }
+            }
         }
 
         if (strpos($uri, '/static/') === 0) {
             $_GET['resource'] = $resource;
-            include($sitePath . DIRECTORY_SEPARATOR . 'pub' . DIRECTORY_SEPARATOR . 'static.php');
+            // load everything except js-translation.json files
+            if (strpos($uri, '/js-translation.json') === false) {
+                include($sitePath . DIRECTORY_SEPARATOR . 'pub' . DIRECTORY_SEPARATOR . 'static.php');
+            } else {
+                // start output buffering
+                ob_start();
+                // generate file on demand via php by including staticScript
+                include($sitePath . DIRECTORY_SEPARATOR . 'pub' . DIRECTORY_SEPARATOR . 'static.php');
+                // remove set-cookie headers in this case (magento 2.3 behaviour)
+                header_remove('set-cookie');
+                header('Cache-Control: no-store, must-revalidate');
+                // send output buffer
+                echo ob_get_clean();
+            }
             exit;
         }
 
@@ -126,6 +178,38 @@ class Magento2ValetDriver extends ValetDriver
         }
 
         return false;
+    }
+
+    /**
+     * Returns env value for specific magento site
+     *
+     * @param $sitePath
+     * @param $key
+     * @return mixed
+     */
+    public function getEnv($sitePath, $key)
+    {
+        // read and cache env while processing request
+        if (!$this->env) {
+            // check if env file exists
+            if ($this->envExists($sitePath)) {
+                $this->env = include $sitePath . '/app/etc/env.php';
+            }
+        }
+        // return value for key if exists
+        if (isset($this->env[$key])) {
+            return $this->env[$key];
+        }
+        return false;
+    }
+
+    /**
+     * Returns the deploy mode set in current magento site
+     */
+    public function isMode($sitePath, $mode)
+    {
+        // compare mode
+        return $mode === $this->getEnv($sitePath, 'MAGE_MODE');
     }
 
     /**
@@ -144,7 +228,7 @@ class Magento2ValetDriver extends ValetDriver
         if (isset($_GET['profile'])) {
             $_SERVER['MAGE_PROFILER'] = 'html';
         }
-        
+
         if (strpos($uri, '/errors') === 0) {
             $file = $sitePath . '/pub' . $uri;
             if (file_exists($file)) {

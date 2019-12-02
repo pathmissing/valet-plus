@@ -13,6 +13,7 @@ class Pecl extends AbstractPecl
     const APCU_EXTENSION = 'apcu';
     const APCU_BC_EXTENSION = 'apcu_bc';
     const GEOIP_EXTENSION = 'geoip';
+    const IMAGICK_EXTENSION = 'imagick';
     const MEMCACHE_EXTENSION = 'memcached';
     const YAML_EXTENSION = 'yaml';
 
@@ -47,11 +48,15 @@ class Pecl extends AbstractPecl
             'default' => false,
             'extension_type' => self::ZEND_EXTENSION_TYPE
         ],
+        self::APCU_BC_EXTENSION => [
+            '5.6' => false,
+            'extension_type' => self::NORMAL_EXTENSION_TYPE
+        ],
         self::APCU_EXTENSION => [
-            '7.3' => '5.1.17',
-            '7.2' => '5.1.17',
-            '7.1' => '5.1.17',
-            '7.0' => '5.1.17',
+            '7.3' => false,
+            '7.2' => false,
+            '7.1' => false,
+            '7.0' => false,
             '5.6' => '4.0.11',
             'extension_type' => self::NORMAL_EXTENSION_TYPE
         ],
@@ -60,6 +65,9 @@ class Pecl extends AbstractPecl
             '7.2' => '1.1.1',
             '7.1' => '1.1.1',
             '7.0' => '1.1.1',
+            'extension_type' => self::NORMAL_EXTENSION_TYPE
+        ],
+        self::IMAGICK_EXTENSION => [
             'extension_type' => self::NORMAL_EXTENSION_TYPE
         ],
         self::MEMCACHE_EXTENSION => [
